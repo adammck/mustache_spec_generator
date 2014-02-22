@@ -20,14 +20,8 @@ type TestSuite struct {
 }
 
 type SpecFile struct {
-    Name     string
     Overview string
     Tests    []MustacheTest
-}
-
-func (sf *SpecFile) FunctionName() string {
-    str := onlyLetters.ReplaceAllString(sf.Name, "")
-    return strings.Title(str[0:len(str)-4])
 }
 
 type MustacheTest struct {
@@ -37,18 +31,11 @@ type MustacheTest struct {
     Template  string
     Partials  map[string]string
     Expected  string
+    TestName  string
 }
 
-func (mt *MustacheTest) FunctionName() string {
-    return onlyLetters.ReplaceAllString(mt.Name, "")
-}
-
-func (mt *MustacheTest) TemplateStr() string {
-    return fmt.Sprintf("%#v", mt.Template)
-}
-
-func (mt *MustacheTest) ExpectedStr() string {
-    return fmt.Sprintf("%#v", mt.Expected)
+func (mt *MustacheTest) HasData() bool {
+    return len(mt.Data.(map[string]interface{})) > 0
 }
 
 func (mt *MustacheTest) DataStr() string {
@@ -56,21 +43,36 @@ func (mt *MustacheTest) DataStr() string {
     return fmt.Sprintf("%#v", string(data))
 }
 
+func (mt *MustacheTest) HasPartials() bool {
+    return len(mt.Partials) > 0
+}
 
 func main() {
+    specs := make([]SpecFile, 0)
+
     files, _ := filepath.Glob("spec/specs/*.json")
-    specs := make([]SpecFile, len(files) - 1)
+    for _, fileName := range files {
 
-    for i, fileName := range files {
-
-        // lambdas are not supported
+        // skip optional specs
         baseName := filepath.Base(fileName)
-        if baseName != "~lambdas.json" {
+        if !strings.HasPrefix(baseName, "~") {
 
+            // parse the json file into a spec
+            spec := SpecFile{}
             file, _ := ioutil.ReadFile(fileName)
-            err := json.Unmarshal(file, &specs[i])
+            err := json.Unmarshal(file, &spec)
             if(err != nil) { panic(err) }
-            specs[i].Name = baseName
+
+            // titlecase and drop the file extension
+            ext := filepath.Ext(fileName)
+            specName := strings.Title(baseName[0:len(baseName) - len(ext)])
+
+            // Add each test in this spec file
+            for i := 0; i < len(spec.Tests); i += 1 {
+                spec.Tests[i].TestName = "Test" + specName + onlyLetters.ReplaceAllString(spec.Tests[i].Name, "")
+            }
+
+            specs = append(specs, spec)
         }
     }
 
@@ -84,6 +86,8 @@ var tmpl = template.Must(template.New("main").Parse(
 import (
     "testing"
     "encoding/json"
+    "io/ioutil"
+    "os"
 )
 
 func mustDecodeJson (str string) interface{} {
@@ -94,20 +98,24 @@ func mustDecodeJson (str string) interface{} {
 }
 
 {{range .SpecFiles}}
-{{$SpecFunctionName := .FunctionName}}
-// -----------------------------------------------------------------------------
 
+
+
+// -----------------------------------------------------------------------------
 {{range .Tests}}
 // {{.Desc}}
-func Test{{$SpecFunctionName}}{{.FunctionName}}(t *testing.T) {
-    template := {{.TemplateStr}}
-    data     := mustDecodeJson({{.DataStr}})
-    actual   := Render(template, data)
-    expected := {{.ExpectedStr }}
+func {{.TestName}}(t *testing.T) { {{if .HasPartials}}{{range $k, $v := .Partials}}
+    ioutil.WriteFile("{{$k}}", []byte({{printf "%#v" $v}}), 0666)
+    defer os.Remove("{{$k}}")
+    {{end}}{{end}}
+    template := {{printf "%#v" .Template}}{{if .HasData}}
+    data     := mustDecodeJson({{.DataStr}}){{end}}
+    expected := {{printf "%#v" .Expected}}{{if .HasData}}
+    actual   := Render(template, data){{else}}
+    actual   := Render(template){{end}}
 
     if actual != expected {
         t.Errorf("returned %#v, expected %#v", actual, expected)
     }
 }
-{{end}}
-{{end}}`))
+{{end}}{{end}}`))
