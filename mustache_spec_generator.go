@@ -2,7 +2,6 @@ package main
 
 import (
     "os"
-    "fmt"
     "strings"
     "path/filepath"
     "io/ioutil"
@@ -36,11 +35,6 @@ type MustacheTest struct {
 
 func (mt *MustacheTest) HasData() bool {
     return len(mt.Data.(map[string]interface{})) > 0
-}
-
-func (mt *MustacheTest) DataStr() string {
-    data, _ := json.Marshal(mt.Data)
-    return fmt.Sprintf("%#v", string(data))
 }
 
 func (mt *MustacheTest) HasPartials() bool {
@@ -85,17 +79,9 @@ var tmpl = template.Must(template.New("main").Parse(
 
 import (
     "testing"
-    "encoding/json"
     "io/ioutil"
     "os"
 )
-
-func mustDecodeJson (str string) interface{} {
-    var data interface{}
-    err := json.Unmarshal([]byte(str), &data)
-    if(err != nil) { panic(err) }
-    return data
-}
 
 {{range .SpecFiles}}
 
@@ -109,7 +95,7 @@ func {{.TestName}}(t *testing.T) { {{if .HasPartials}}{{range $k, $v := .Partial
     defer os.Remove("{{$k}}")
     {{end}}{{end}}
     template := {{printf "%#v" .Template}}{{if .HasData}}
-    data     := mustDecodeJson({{.DataStr}}){{end}}
+    data     := {{printf "%#v" .Data}}{{end}}
     expected := {{printf "%#v" .Expected}}{{if .HasData}}
     actual   := Render(template, data){{else}}
     actual   := Render(template){{end}}
